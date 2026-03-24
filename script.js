@@ -1,170 +1,128 @@
-// Global state
-let boxes = [];                // array of weights (numbers)
-let weightLimit = 100;         // max allowed weight
-let optimalSegment = {         // stores the best contiguous segment
-    start: -1,
-    end: -1,
-    sum: 0
-};
-
-// DOM elements
+// state
+let boxes = [];
+let limit = 100;
+let best = { start: -1, end: -1, total: 0 };
+// grab elements
 const weightInput = document.getElementById('weightInput');
-const addButton = document.getElementById('addBtn');
+const addBtn = document.getElementById('addBtn');
 const limitInput = document.getElementById('limitInput');
-const boxesContainer = document.getElementById('boxesContainer');
-const emptyMessage = document.getElementById('emptyMessage');
-const totalCountSpan = document.getElementById('totalCount');
+const container = document.getElementById('boxesContainer');
+const emptyMsg = document.getElementById('emptyMessage');
+const countSpan = document.getElementById('totalCount');
 const resultPanel = document.getElementById('resultPanel');
-const resultDetails = document.getElementById('resultDetails');
-
-// Core algorithm: sliding window to find maximum sum ≤ limit
-// Returns indices and sum of the best contiguous subarray
-function findOptimalContiguousSubarray(weights, maxWeight) {
-    console.log("Probando findOptimal... Pesos:", weights, "Límite:", maxWeight);
-    console.table(weights);
-    let bestStart = -1;
-    let bestEnd = -1;
-    let bestSum = 0;
-    let currentSum = 0;
+const resultInfo = document.getElementById('resultDetails');
+// find the best group of consecutive boxes that fits under the limit
+// i use two pointers, one on the left and one on the right
+// i move the right one forward adding weight, and if it goes over the limit
+// i move the left one forward to shrink the window until it fits again
+function findBestGroup(weights, maxW) {
+    let bStart = -1;
+    let bEnd = -1;
+    let bSum = 0;
+    let sum = 0;
     let left = 0;
-
     for (let right = 0; right < weights.length; right++) {
-        console.log(`  → Right: ${right}, sum actual: ${currentSum + weights[right]}`);
-        currentSum += weights[right];
-
-        // Shrink window from left if exceeding limit
-        while (currentSum > maxWeight && left <= right) {
-            currentSum -= weights[left];
+        sum += weights[right];
+        // if we passed the limit, move left pointer forward
+        while (sum > maxW && left <= right) {
+            sum -= weights[left];
             left++;
         }
-
-        // After adjustment, if this sum is better (larger) or equal but shorter
-        if (currentSum > bestSum) {
-            bestSum = currentSum;
-            bestStart = left;
-            bestEnd = right;
-        } else if (currentSum === bestSum && bestStart !== -1) {
-            // Prefer shorter segment (optional, but good for user clarity)
-            if ((right - left) < (bestEnd - bestStart)) {
-                bestStart = left;
-                bestEnd = right;
+        // check if this is better than what we had
+        if (sum > bSum) {
+            bSum = sum;
+            bStart = left;
+            bEnd = right;
+        } else if (sum === bSum && bStart !== -1) {
+            if ((right - left) < (bEnd - bStart)) {
+                bStart = left;
+                bEnd = right;
             }
         }
     }
-
-    return {
-        start: bestStart,
-        end: bestEnd,
-        sum: bestSum
-    };
+    return { start: bStart, end: bEnd, total: bSum };
 }
-
-// Update UI: render boxes and highlight the optimal segment
-function updateUI() {
-    console.log("UpdateUI! Boxes actuales:", boxes, "Cantidad:", boxes.length, "Limit:", weightLimit);
-    const boxCount = boxes.length;
-    totalCountSpan.textContent = `${boxCount} box${boxCount !== 1 ? 'es' : ''}`;
-
-    boxesContainer.innerHTML = '';
-    if (boxCount === 0) {
-        boxesContainer.appendChild(emptyMessage);
+// render everything on screen
+function render() {
+    let count = boxes.length;
+    countSpan.textContent = count + (count !== 1 ? ' boxes' : ' box');
+    container.innerHTML = '';
+    if (count === 0) {
+        container.appendChild(emptyMsg);
         resultPanel.classList.add('hidden');
         return;
     }
-
-    // Recalculate optimal segment
-    console.log("Calculando segmento óptimo...");
-    optimalSegment = findOptimalContiguousSubarray(boxes, weightLimit);
-    console.log("Óptimo encontrado:", optimalSegment);
-
-    // Render each box as a card
-    boxes.forEach((weight, idx) => {
-        const isOptimal = (idx >= optimalSegment.start && idx <= optimalSegment.end);
-        const card = document.createElement('div');
+    // recalculate
+    best = findBestGroup(boxes, limit);
+    // draw each box
+    for (let i = 0; i < boxes.length; i++) {
+        let selected = (i >= best.start && i <= best.end);
+        let card = document.createElement('div');
         card.className = `
             relative w-20 h-20 flex flex-col items-center justify-center rounded-xl shadow-sm border-2 transition-all
-            ${isOptimal
+            ${selected
                 ? 'bg-green-100 border-green-500 ring-2 ring-green-300 scale-105'
                 : 'bg-white border-gray-200 hover:shadow-md'
             }
         `;
         card.innerHTML = `
-            <span class="text-xl font-bold ${isOptimal ? 'text-green-700' : 'text-gray-700'}">${weight}</span>
+            <span class="text-xl font-bold ${selected ? 'text-green-700' : 'text-gray-700'}">${boxes[i]}</span>
             <span class="text-xs text-gray-500">kg</span>
             <button class="remove-box absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 shadow"
-                    data-index="${idx}">✕</button>
+                    data-index="${i}">X</button>
         `;
-        boxesContainer.appendChild(card);
-    });
-
-    // Attach remove event listeners
-    document.querySelectorAll('.remove-box').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        container.appendChild(card);
+    }
+    // remove buttons
+    let removeBtns = document.querySelectorAll('.remove-box');
+    for (let i = 0; i < removeBtns.length; i++) {
+        removeBtns[i].addEventListener('click', function (e) {
             e.stopPropagation();
-            const idx = parseInt(btn.dataset.index);
+            let idx = parseInt(this.dataset.index);
             removeBox(idx);
         });
-    });
-
-    // Update result panel
-    if (optimalSegment.start !== -1 && optimalSegment.sum > 0) {
-        const startHuman = optimalSegment.start + 1;
-        const endHuman = optimalSegment.end + 1;
-        const remaining = weightLimit - optimalSegment.sum;
-        resultDetails.innerHTML = `
-            <p><strong>Selected boxes:</strong> positions ${startHuman} → ${endHuman}</p>
-            <p><strong>Total weight:</strong> ${optimalSegment.sum.toFixed(2)} kg</p>
-            <p><strong>Remaining capacity:</strong> ${remaining.toFixed(2)} kg</p>
-            <p class="text-sm text-gray-500 mt-2">Optimal contiguous load maximizing forklift utilization.</p>
+    }
+    // show result
+    if (best.start !== -1 && best.total > 0) {
+        let remaining = limit - best.total;
+        resultInfo.innerHTML = `
+            <p><strong>Selected boxes:</strong> positions ${best.start + 1} to ${best.end + 1}</p>
+            <p><strong>Total weight:</strong> ${best.total} kg</p>
+            <p><strong>Remaining capacity:</strong> ${remaining} kg</p>
+            <p class="text-sm text-gray-500 mt-2">Best contiguous load for this trip.</p>
         `;
         resultPanel.classList.remove('hidden');
     } else {
         resultPanel.classList.add('hidden');
     }
 }
-
-// Add a new box
 function addBox() {
-    console.log("Click en addBox! Valor:", weightInput.value);
-    const value = parseFloat(weightInput.value);
-    if (isNaN(value) || value <= 0) {
+    let val = parseFloat(weightInput.value);
+    if (isNaN(val) || val <= 0) {
         alert('Please enter a valid positive weight.');
         return;
     }
-    console.log(`Agrego caja de ${value}kg. Boxes ahora:`, [...boxes, value]);
-    boxes.push(value);
+    boxes.push(val);
     weightInput.value = '';
-    console.log("Después de updateUI, total cajas:", boxes.length);
-    updateUI();
+    render();
 }
-
-// Remove a box by index
-function removeBox(index) {
-    console.log(`Borro caja en posición ${index}. Antes:`, boxes);
-    boxes.splice(index, 1);
-    console.log("Después:", boxes);
-    updateUI();
+function removeBox(idx) {
+    boxes.splice(idx, 1);
+    render();
 }
-
-// Update weight limit and recompute
-function updateLimit() {
-    console.log("Cambiando límite a:", limitInput.value);
-    const newLimit = parseFloat(limitInput.value);
-    if (isNaN(newLimit) || newLimit <= 0) {
+function changeLimit() {
+    let newVal = parseFloat(limitInput.value);
+    if (isNaN(newVal) || newVal <= 0) {
         alert('Weight limit must be a positive number.');
         return;
     }
-    weightLimit = newLimit;
-    updateUI();
+    limit = newVal;
+    render();
 }
-
-// Event listeners
-addButton.addEventListener('click', addBox);
-limitInput.addEventListener('input', updateLimit);
-weightInput.addEventListener('keypress', (e) => {
+// events
+addBtn.addEventListener('click', addBox);
+limitInput.addEventListener('input', changeLimit);
+weightInput.addEventListener('keypress', function (e) {
     if (e.key === 'Enter') addBox();
 });
-
-// Initial render
-console.log("Arranco el programa. Boxes vacías:", boxes, "Límite:", weightLimit);
-updateUI();
+render();

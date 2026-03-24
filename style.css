@@ -1,0 +1,8 @@
+/* Custom styles (Tailwind handles most, but we add some extras) */
+.remove-box {
+    transition: all 0.2s ease;
+}
+
+.remove-box:hover {
+    transform: scale(1.1);
+}
